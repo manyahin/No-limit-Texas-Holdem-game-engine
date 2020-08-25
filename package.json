@@ -1,0 +1,19 @@
+{
+  "name": "poker_engine",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "directories": {
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "mocha"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "ikea-name-generator": "^1.0.3",
+    "mocha": "^8.1.1"
+  }
+}
