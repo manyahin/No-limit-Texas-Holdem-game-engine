@@ -23,6 +23,8 @@ const validConfigStart = () => {
   return [server, player1, player2, player3, player4, player5]
 }
 
+const getRequiredPlayer = (playerId, players) => players.find(p => p.id === playerId)
+
 describe('poker', () => {
   describe('players', () => {
     it('minimum 4', () => {
@@ -36,7 +38,7 @@ describe('poker', () => {
       server.connect(player2)
       server.connect(player3)
 
-      assert.throws(server.start.bind(server))
+      assert.throws(server.start.bind(server), /The count of players should be between 4 and 9/)
     })
     it('maximum 9', () => {
       const server = new Server()
@@ -63,7 +65,7 @@ describe('poker', () => {
       server.connect(player9)
       server.connect(player10)
   
-      assert.throws(server.start.bind(server))
+      assert.throws(server.start.bind(server), /The count of players should be between 4 and 9/)
     })
     it('between 4 and 9', () => {
       const server = new Server()
@@ -94,6 +96,8 @@ describe('poker', () => {
     it('blinds are working well', () => {
       const [server, player1, player2, player3, player4, player5] = validConfigStart()
 
+      server.setBlinds()
+
       assert(player1.blind, 'button')
       assert(player2.blind, 'small')
       assert(player3.blind, 'big')
@@ -105,11 +109,11 @@ describe('poker', () => {
     it('shuffle cards', () => {
       const [server] = validConfigStart()
 
-      const startCards = [...server.desk.cards]
+      const startCards = [...server.getDeskCards()]
 
       server.shuffle()
 
-      const afterShuffleCards = [...server.desk.cards]
+      const afterShuffleCards = [...server.getDeskCards()]
 
       assert.notDeepEqual(startCards, afterShuffleCards)
     })
@@ -124,7 +128,7 @@ describe('poker', () => {
       assert.equal(player4.cards.length, 2)
       assert.equal(player5.cards.length, 2)
 
-      assert.equal(server.desk.cards.length, 52 - 2 * 5) // 52 cards in Desk minus 2 cards per Player
+      assert.equal(server.getDeskCards().length, 52 - 2 * 5) // 52 cards in Desk minus 2 cards per Player
     })
     it('deny access to players data', () => {
       const [server] = validConfigStart()
@@ -140,13 +144,24 @@ describe('poker', () => {
 
       assert.equal(server.desk, undefined)
     })
-    describe('betting round', () => {
-      it('init', () => {
-        const [server] = validConfigStart()
-  
+    describe('play', () => {
+      it('wrong player turn', () => {
+        const [server, player1, player2, player3, player4, player5] = validConfigStart()
+        // [.., button, small, big, fold, call]
+
+        server.setBlinds()
         server.giveFirstCards()
   
-        server.startBettingRound()
+        assert.throws(() => {
+          // player 4 must to do action
+          player5.fold()
+        }, /Action of wrong player/)
+      })
+      it('init', () => {
+        const [server] = validConfigStart()
+
+        server.setBlinds()
+        server.giveFirstCards()
 
         const tableData = server.getTableData()
 
@@ -157,12 +172,12 @@ describe('poker', () => {
 
         assert.equal(
           bigBlindPlayer.money,
-          tableData.options.startMoney - tableData.options.minimumBet
+          tableData.options.startMoney - tableData.options.minBet
         )
 
         assert.equal(
           smallBlindPlayer.money,
-          tableData.options.startMoney - tableData.options.minimumBet / 2
+          tableData.options.startMoney - tableData.options.minBet / 2
         )
 
         assert.equal(
@@ -177,24 +192,92 @@ describe('poker', () => {
 
         assert.equal(tableData.communityCards.length, 0)
       })
-    })
-    it('play', () => {
-      const [server, player1, player2, player3, player4, player5] = validConfigStart()
+      it('not enough money', () => {
+        const [server, player1, player2, player3, player4, player5] = validConfigStart()
+  
+        server.setBlinds()
+        server.giveFirstCards()
+  
+        assert.throws(() => {
+          player4.raise(120)
+        }, /Player dont have enought of money to do action/)
+      })
+      it('call', () => {
+        const [server, player1, player2, player3, player4, player5] = validConfigStart()
+        // [.., button, small, big, fold, call]
+  
+        server.setBlinds()
+        server.giveFirstCards()
+  
+        player4.fold()
+        player5.call()
 
-      server.giveFirstCards()
-      server.startBettingRound()
+        player1.call()
+        player2.call()
+        player3.call()
+  
+        assert.equal(player1.money, 98)
+        assert.equal(player2.money, 98)
+        assert.equal(player3.money, 98)
+        assert.equal(player4.money, 100)
+        assert.equal(player5.money, 98)
 
-      // get first player action
-      // deny actions from another player
-      // all players should play
-      player1.fold()
-      player2.call()
-      player3.check()
-      player4.raise()
-      player5.call()
+        assert.equal(server.round, 'flop')
 
-      
+        assert.equal(server.communityCards.length, 3)
+      })
+      it('raise', () => {
+        const [server, player1, player2, player3, player4, player5] = validConfigStart()
+        // [.., button, small, big, raise, fold]
+        // [.., raise, fold, call, fold, fold]
+  
+        server.setBlinds()
+        server.giveFirstCards()
+  
+        player4.raise(20)
+        player5.fold()
 
+        player1.raise(40)
+        player2.fold()
+        player3.call()
+
+        player4.call()
+  
+        assert.equal(player1.money, 60)
+        assert.equal(player2.money, 99)
+        assert.equal(player3.money, 60)
+        assert.equal(player4.money, 60)
+        assert.equal(player5.money, 100)
+
+        assert.equal(server.round, 'turn')
+
+        assert.equal(server.communityCards.length, 4)
+      })
+      it.skip('one left', () => {
+        const [server, player1, player2, player3, player4, player5] = validConfigStart()
+        // [.., button, small, big, raise, fold]
+        // [.., raise, fold, call, fold, fold]
+  
+        server.setBlinds()
+        server.giveFirstCards()
+  
+        player4.raise(20)
+        player5.fold()
+
+        player1.call()
+        player2.fold()
+        player3.call()
+  
+        assert.equal(player1.money, 98)
+        assert.equal(player2.money, 98)
+        assert.equal(player3.money, 98)
+        assert.equal(player4.money, 100)
+        assert.equal(player5.money, 98)
+
+        assert.equal(server.round, 'flop')
+
+        assert.equal(server.communityCards.length, 3)
+      })
     })
   })
 })
