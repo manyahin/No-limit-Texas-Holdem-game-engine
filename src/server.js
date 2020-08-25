@@ -1,5 +1,6 @@
 
 const Desk = require('./desk')
+const Hand = require('pokersolver').Hand
 
 const Server = class {
   // private fields
@@ -19,12 +20,15 @@ const Server = class {
 
     this.bets = {
       limit: 0,
-      players: {}
+      players: {},
+      pot: 0
     }
     this.communityCards = []
     this.currPlayerIdTurn = 0
     this.round = 'preflop'
     this.playerGen = this.getNextPlayer()
+    this.gameStatus = 'play' // play, finish
+    this.firstPlayerIndex = 0
   }
   start() {
     // console.log('poker server started')
@@ -32,7 +36,37 @@ const Server = class {
     if (this.#players.length < 4 || this.#players.length > 9)
       throw new Error('The count of players should be between 4 and 9')
 
+    this.gameStatus = 'play'
+
     return true;
+  }
+  restart() {
+    if (this.gameStatus !== 'finish') {
+      throw new Error(`Game not finished yet!`)
+    }
+
+    this.gameStatus = 'play'
+
+    this.bets = {
+      limit: 0,
+      players: {},
+      pot: 0
+    }
+
+    // rotate order of players
+    this.firstPlayerIndex++
+
+    this.playerGen = this.getNextPlayer(this.firstPlayerIndex)
+
+    this.#players.map(p => {
+      p.cards = []
+      p.status = 'play'
+      p.blind = 'no'
+    })
+
+    this.setBlinds()
+
+    this.shuffle() && this.giveFirstCards()
   }
   connect(player) {
     this.#players.push(player)
@@ -56,6 +90,7 @@ const Server = class {
       player.status = 'blind'
       player.money -= bet
       this.bets.players[player.id] = bet
+      this.bets.pot += bet
     }
 
     const setBigBlind = (player) => {
@@ -64,6 +99,7 @@ const Server = class {
       player.status = 'blind'
       player.money -= bet
       this.bets.players[player.id] = bet
+      this.bets.pot += bet
     }
 
     setButtonBlind.bind(this)(this.playerGen.next().value)
@@ -87,8 +123,9 @@ const Server = class {
       player.cards = this.#desk.draw(2)
     }
   }
-  * getNextPlayer() {
-    let index = 0
+  // generator
+  * getNextPlayer(firstPlayerIndex = 0) {
+    let index = firstPlayerIndex
     const calcIndex = () => (index + 1) % this.#players.length
     while (true) {
       const player = this.#players[index]
@@ -100,7 +137,7 @@ const Server = class {
       index = calcIndex()
     }
   }
-  getPlayerBet(playerId) {
+  getPlayerCurrBet(playerId) {
     return this.bets.players[playerId] || 0
   }
   getPlayerById(playerId) {
@@ -123,36 +160,72 @@ const Server = class {
       round: this.round
     }
   }
-  nextPlayer() {
-    this.currPlayerIdTurn = this.playerGen.next().value.id
-    // todo: skip fold players
+  get formattedComunityCards() {
+    return this.communityCards.map(c => {
+      return `${c.name}${c.suit.slice(0, 1).toLowerCase()}`
+    })
+  }
+  calculateResults() {
+    const activePlayers = this.#players
+      .filter(p => p.status !== 'fold')
+      .map(p => ({...p, solvedHand: Hand.solve([...p.formattedCards, ...this.formattedComunityCards])}))
 
-    const status = this.#players.map(p => p.status)
-    if (!status.includes('blind') && !status.includes('play')) {
-      return this.nextRound()
+    const winnerHand = Hand.winners(activePlayers.map(p => p.solvedHand))
+
+    const winnerPlayer = activePlayers.filter(p => p.solvedHand.descr === winnerHand[0].descr)
+
+    this.finishGame(winnerPlayer[0], winnerHand[0].descr)
+  }
+  finishGame(player, winComb = '') {
+    this.gameStatus = 'finish'
+
+    if (!winComb) {
+      console.log(`Game finished, ${player.name} won ${this.bets.pot} gold`)
+    }
+    else {
+      console.log(`Game finished, ${player.name} won ${this.bets.pot} gold with combination ${winComb}`)
+    }
+  }
+  nextPlayer() {
+    const currPlayer = this.playerGen.next().value
+
+    this.currPlayerIdTurn = currPlayer.id
+
+    const statuses = this.#players.map(p => p.status).filter(s => s !== 'fold')
+
+    // one player left
+    if (statuses.length === 1) {
+      currPlayer.money += this.bets.pot
+      return this.finishGame(currPlayer)
     }
 
-    // todo: If only one player remains after a round he gets all the money in the pot and you deal another game
-
-    // todo: If all the players Call the last raise without re-raising Move to next step.
-
-    // if (this.round === 'preflop') {
-
-    // }
+    if (!statuses.includes('blind') && !statuses.includes('play')) {
+      return this.nextRound()
+    }
   }
   nextRound() {
+    const resetPlayerStatus = () => this.#players
+      .filter(p => p.status !== 'fold')
+      .map(p => p.status = 'play')
+    
     switch (this.round) {
       case 'preflop':
         this.round = 'flop'
         this.communityCards = this.#desk.draw(3)
+        resetPlayerStatus()
         break
       case 'flop':
         this.round = 'turn'
         this.communityCards = [...this.communityCards, ...this.#desk.draw(1)]
+        resetPlayerStatus()
         break
       case 'turn':
         this.round = 'river'
         this.communityCards = [...this.communityCards, ...this.#desk.draw(1)]
+        resetPlayerStatus()
+        break
+      case 'river':
+        this.calculateResults()
         break
     }
   }
@@ -164,35 +237,39 @@ const Server = class {
       throw new Error('Action of wrong player')
     }
 
+    // todo: deny actions to players with status 'fold'
+
     switch (actionName) {
       case 'fold':
         player.status = 'fold'
         break
       case 'call':
-        needToPay = this.bets.limit - this.getPlayerBet(playerId)
+        needToPay = this.bets.limit - this.getPlayerCurrBet(playerId)
 
         this.validatePlayerBalance(playerId, needToPay)
 
         player.money -= needToPay
         player.status = 'call'
 
-        this.bets.players[player.id] = this.getPlayerBet(playerId) + needToPay
+        this.bets.players[player.id] = this.getPlayerCurrBet(playerId) + needToPay
+        this.bets.pot += needToPay
 
         break
       case 'check':
-
+        player.status = 'check'
         break
       case 'raise':
         this.bets.limit = amount
 
-        needToPay = this.bets.limit - this.getPlayerBet(playerId)
+        needToPay = this.bets.limit - this.getPlayerCurrBet(playerId)
 
         this.validatePlayerBalance(playerId, needToPay)
 
         player.money -= needToPay
         player.status = 'raise'
 
-        this.bets.players[player.id] = this.getPlayerBet(playerId) + needToPay
+        this.bets.players[player.id] = this.getPlayerCurrBet(playerId) + needToPay
+        this.bets.pot += needToPay
 
         break
     }

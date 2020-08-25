@@ -10,6 +10,11 @@ const Player = class {
     this.server
     this.status // fold, play, call, blind
   }
+  get formattedCards() {
+    return this.cards.map(c => {
+      return `${c.name}${c.suit.slice(0, 1).toLowerCase()}`
+    })
+  }
   fold() {
     this.server.makeAction('fold', this.id)
   }
