@@ -2,7 +2,7 @@
 const Desk = require('./desk')
 const Hand = require('pokersolver').Hand
 
-const Server = class {
+const Poker = class {
   // private fields
   #players = []
   #desk
@@ -168,7 +168,7 @@ const Server = class {
   calculateResults() {
     const activePlayers = this.#players
       .filter(p => p.status !== 'fold')
-      .map(p => ({...p, solvedHand: Hand.solve([...p.formattedCards, ...this.formattedComunityCards])}))
+      .map(p => ({ ...p, solvedHand: Hand.solve([...p.formattedCards, ...this.formattedComunityCards]) }))
 
     const winnerHand = Hand.winners(activePlayers.map(p => p.solvedHand))
 
@@ -207,7 +207,7 @@ const Server = class {
     const resetPlayerStatus = () => this.#players
       .filter(p => p.status !== 'fold')
       .map(p => p.status = 'play')
-    
+
     switch (this.round) {
       case 'preflop':
         this.round = 'flop'
@@ -278,4 +278,4 @@ const Server = class {
   }
 }
 
-module.exports = Server
+module.exports = Poker
