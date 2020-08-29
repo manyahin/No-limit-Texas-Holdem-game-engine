@@ -53,4 +53,15 @@ describe('http', () => {
 
     assert.equal(res.body.players.length, 5)
   })
+  it('action', async () => {
+    const tableData = await request(app).get('/table')
+
+    const res = await request(app).post('/action').send({
+      actionName: 'call',
+      playerId: tableData.body.currentPlayerId,
+      amount: 0
+    })
+
+    assert.equal(res.text, '{"status":"done"}')
+  })
 })

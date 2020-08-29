@@ -42,6 +42,12 @@ app.get('/table', (req, res) => {
   )
 })
 
+app.post('/action', (req, res) => {
+  poker.makeAction(req.body.actionName, req.body.playerId, req.body.amount)
+  
+  return res.send({ status: 'done' })
+})
+
 server.listen(port, () => {
   console.log(`Poker app listening at http://localhost:${port}`)
 })

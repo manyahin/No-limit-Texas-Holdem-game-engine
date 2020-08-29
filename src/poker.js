@@ -157,7 +157,8 @@ const Poker = class {
       options: this.options,
       bets: this.bets,
       communityCards: this.communityCards,
-      round: this.round
+      round: this.round,
+      currentPlayerId: this.currPlayerIdTurn,
     }
   }
   get formattedComunityCards() {

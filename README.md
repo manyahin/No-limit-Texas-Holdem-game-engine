@@ -4,11 +4,12 @@
 
 ## Structure
 
-    src/poker - contain all poker table logic
-    src/player = contain all player logic
-    src/desk - contain desk logic
-    test/poker - all poker tests
-    test/http - all web server tests
+    src/poker - poker table logic
+    src/player = player logic
+    src/desk - desk logic
+    src/http - web server
+    test/poker - poker tests
+    test/http - web server tests
 
 ## Tests
 
